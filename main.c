@@ -2,6 +2,7 @@
 #include "menu.h"
 #include "config.h"
 #include "gpio.h"
+#include <unistd.h>
 
 int main()
 {
