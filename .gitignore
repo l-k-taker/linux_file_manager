@@ -1,4 +1,4 @@
 app/file_manager
 app/logs/
 *.o
-linux_file_manager/
+
