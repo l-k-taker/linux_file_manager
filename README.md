@@ -43,12 +43,15 @@
 | 多线程 | POSIX Threads (pthread)、互斥锁、条件变量 |
 | 并发模型 | 线程池（动态扩容缩容 + 管理者线程 + 生产者-消费者模型） |
 | 网络通信 | TCP Socket、多客户端并发接入、线程池任务分发 |
+| 通信协议 | 自定义二进制帧协议（魔数+命令字+序列号+载荷+异或校验） |
+| 硬件控制 | Linux sysfs GPIO 接口（Orange Pi Zero 3 26pin 排针） |
 | 日志系统 | 文件描述符、write、dup2 标准输出重定向、flock 文件锁 |
 | 配置管理 | inih 第三方库解析 INI 配置文件，运行时可配 |
 | 构建工具 | GNU Make（支持 x86 与 ARM64 交叉编译双目标） |
 | 版本控制 | Git |
 | 目标平台 | x86_64 / ARM64 (AArch64) |
-| 硬件平台 | Orange Pi Zero 3 (Allwinner H616) |
+| 硬件平台 | Orange Pi Zero 3 (Allwinner H616/H618) |
+
 ---
 
 ## 3. 目录结构
@@ -164,7 +167,6 @@ int threadPoolDestory(struct Threadpool* pool);
 ```ini
 [log]
 path=logs/system.log          ; 日志文件路径（相对程序根目录）
-
 [thread_pool]
 task_num=100                  ; 任务队列容量
 thread_max=2                  ; 最大工作线程数
@@ -178,19 +180,30 @@ thread_min=1                  ; 最小工作线程数
 
 ### 4.7 GPIO 控制模块 (`gpio.c`)
 
-基于 Linux sysfs 接口 (`/sys/class/gpio/`) 封装 GPIO 操作，用于 Orange Pi Zero 3 (Allwinner H616)：
+基于 Linux sysfs 接口 (`/sys/class/gpio/`) 封装 GPIO 操作，用于 Orange Pi Zero 3 (Allwinner H616/H618)：
 
-**引脚映射：**
-| 宏定义 | 引脚 | sysfs 编号 | 用途 |
-|--------|------|-----------|------|
-| `GPIO_PC9` | PC9 | 73 | 启动指示灯 (默认) |
-| `GPIO_PC4` | PC4 | 68 | 预留 |
-| `GPIO_PC5` | PC5 | 69 | 预留 |
+**引脚映射（26pin 排针）：**
+
+| 宏定义 | 引脚 | sysfs 编号 | 物理引脚 |
+|--------|------|-----------|---------|
+| `GPIO_PC6` | PC6 | 70 | Pin 11 |
+| `GPIO_PC7` | PC7 | 71 | Pin 22 |
+| `GPIO_PC8` | PC8 | 72 | Pin 15 |
+| `GPIO_PC9` | PC9 | 73 | Pin 7（启动指示灯，默认） |
+| `GPIO_PC10` | PC10 | 74 | Pin 26 |
+| `GPIO_PC11` | PC11 | 75 | Pin 12 |
+| `GPIO_PC12` | PC12 | 76 | Pin 16 |
+| `GPIO_PC13` | PC13 | 77 | Pin 18 |
+| `GPIO_PC14` | PC14 | 78 | Pin 18 |
+| `GPIO_PC15` | PC15 | 79 | Pin 16 |
+
+**sysfs 编号规则：** `PCx = 64 + x`（Port C 从 64 开始编号）
 
 **核心功能：**
-- `gpio_init(pin, direction, initial_value)` — 导出引脚、设置方向、初始值
+- `gpio_init(pin, direction, initial_value)` — 导出引脚、设置方向、初始值（含双保险写入机制，防止内核异步重置导致电平不稳定）
 - `gpio_set(pin, value)` / `gpio_get(pin)` — 设置/读取电平
 - `gpio_toggle(pin)` — 翻转电平
+- `gpio_uninit(pin)` — 拉低电平并取消导出
 - `gpio_boot_indicator_init()` — 启动时点亮 PC9 指示灯
 - `gpio_cleanup()` — 逆序释放所有已初始化引脚
 
@@ -205,6 +218,7 @@ thread_min=1                  ; 最小工作线程数
 ```
 
 **命令字定义：**
+
 | 命令字 | 名称 | 说明 |
 |--------|------|------|
 | `0x01` | PING/PONG | 心跳请求/响应 (FLAGS=0x02) |
@@ -216,6 +230,7 @@ thread_min=1                  ; 最小工作线程数
 | `0xF0` | ERROR | 错误响应 |
 
 **标志位：**
+
 | 值 | 含义 |
 |----|------|
 | `0x00` | 请求 |
@@ -226,6 +241,7 @@ thread_min=1                  ; 最小工作线程数
 - `proto_build_frame()` — 构建完整协议帧（魔数+载荷+校验和）
 - `proto_parse_frame()` — 从字节流中解析帧（支持粘包/半包处理）
 - `proto_checksum()` — 异或校验计算
+- `proto_verify_magic()` — 验证帧头魔数
 
 ### 4.9 智能网关模块 (`gateway.c`)
 
@@ -258,19 +274,8 @@ gateway> h
 ===========================================
 ```
 
-**状态查询输出：**
-```
-╔═══════════════════════════════════════════════════════╗
-║              GATEWAY DEVICE STATUS                   ║
-╠═══════════════════════════════════════════════════════╣
-║  Port: 6789                                      ║
-║  Devices: 1/32                                  ║
-╠═══════════════════════════════════════════════════════╣
-║  [1] 192.168.1.100:54321 STM32   ID=STM32_NODE_01 ║
-╚═══════════════════════════════════════════════════════╝
-```
-
 **与原 server.c 的对比：**
+
 | 原 server.c | 新 gateway 模块 |
 |-------------|----------------|
 | 简单 recv/send 回显 | 协议帧解析 + 回调分发 |
@@ -284,7 +289,7 @@ gateway> h
 
 命令行交互式菜单，提供文件管理、目录管理、日志查看、网关服务器管理等功能入口。
 
-选项 11 进入网关服务器管理界面，提供完整的 q/s/h 命令交互能力。
+选项 11 进入网关服务器管理界面，提供完整的 q/s/h/l/r 命令交互能力。
 
 ---
 
@@ -309,6 +314,7 @@ gateway> h
 - GCC 编译器
 - GNU Make
 - POSIX Threads 支持（pthread）
+- ARM64 交叉编译工具链（`aarch64-none-linux-gnu-gcc`，仅交叉编译时需要）
 
 ### 6.2 x86 本地编译
 
@@ -319,15 +325,13 @@ make            # 默认编译 x86 版本，输出到 app/file_manager
 
 ### 6.3 ARM64 交叉编译与 NFS 部署
 
-需要提前安装 ARM64 交叉编译工具链（`aarch64-none-linux-gnu-gcc`）：
-
 ```bash
 make arm        # 交叉编译 ARM64 版本，输出到 app/file_manager_arm
 ```
 
 本项目采用 **NFS 网络文件系统** 进行开发板部署，Ubuntu 开发机作为 NFS 服务端共享目录，Orange Pi 作为客户端挂载，实现编译后直接在板上运行，无需反复拷贝文件。
 
-**开发机（NFS 服务端）**：将编译产物放入 NFS 共享目录（例如 `~/linux/nfs`）：
+**开发机（NFS 服务端）**：将编译产物放入 NFS 共享目录：
 
 ```bash
 cp app/file_manager_arm ~/linux/nfs/
@@ -339,14 +343,16 @@ cp app/config.ini ~/linux/nfs/app/
 ```bash
 # 创建挂载点
 sudo mkdir -p /mnt/nfs
-# 挂载 NFS 共享目录（将 <ubuntu-ip> 替换为开发机 IP，共享路径按实际情况修改）
+# 挂载 NFS 共享目录（将 <ubuntu-ip> 替换为开发机 IP）
 sudo mount -t nfs <ubuntu-ip>:/home/user/linux/nfs /mnt/nfs
 # 进入挂载目录运行程序
 cd /mnt/nfs
 chmod +x file_manager_arm
-./file_manager_arm
+sudo ./file_manager_arm
 ```
 
+> GPIO 操作需要 root 权限，Orange Pi 上运行时需加 `sudo`。
+>
 > NFS 挂载方式下，开发机修改代码并重新编译后，开发板端无需重新拷贝，直接运行即可，适合嵌入式开发的频繁调试场景。
 
 ### 6.4 同时编译双平台
@@ -376,8 +382,8 @@ make clean      # 删除编译产物和日志文件
 | 版本控制 | Git |
 | 目标平台 | x86_64 / ARM64 (AArch64) |
 | ARM 开发板 | Orange Pi Zero 3 |
-| SoC | Allwinner H616 |
-| 开发方式 | Ubuntu 开发 + ARM64 交叉编译 + 开发板部署测试 |
+| SoC | Allwinner H616 / H618 |
+| 开发方式 | Ubuntu 开发 + ARM64 交叉编译 + NFS 挂载部署测试 |
 
 ---
 
@@ -386,10 +392,12 @@ make clean      # 删除编译产物和日志文件
 1. **完整的工程化结构**：头文件/源码/第三方库/运行时目录分离，模块化设计，各模块职责单一、接口清晰
 2. **自研动态线程池**：非网上最简版，实现了管理者线程动态扩容缩容、双锁减少竞争、环形任务队列，具备生产级线程池的核心特征
 3. **线程安全日志系统**：互斥锁 + flock 文件锁双重保护，支持多线程/多进程环境，dup2 标准输出重定向，日志含 PID/TID 便于调试
-4. **网络服务与线程池深度集成**：Accept 线程 + 线程池任务分发的经典架构，客户端链表统一管理，支持运行时状态查询与优雅关闭
-5. **运行时可配置**：通过 INI 配置文件管理日志路径、线程池参数，无需重新编译即可调整系统行为
-6. **双平台编译部署**：一套 Makefile 同时支持 x86 开发调试与 ARM64 交叉编译部署，完整覆盖从开发到板上运行的嵌入式开发流程
-7. **路径无关设计**：通过 `/proc/self/exe` 获取程序根目录，配置文件和日志文件使用相对路径，程序可在任意工作目录下运行
+4. **智能网关三线程架构**：Accept线程 + 线程池Worker + 心跳检测线程，替代原粗糙回显服务器，实现协议帧解析、回调分发、心跳保活、设备管理等完整网关能力
+5. **自定义二进制通信协议**：魔数+命令字+序列号+载荷+异或校验的帧结构，支持粘包/半包解析，请求-响应匹配，为物联网设备通信提供可靠传输层
+6. **sysfs GPIO 硬件控制**：基于Linux原生sysfs接口封装GPIO操作，零第三方依赖，支持引脚导出/方向设置/电平读写/翻转/清理，含双保险写入机制应对内核异步重置
+7. **运行时可配置**：通过 INI 配置文件管理日志路径、线程池参数，无需重新编译即可调整系统行为
+8. **双平台编译部署**：一套 Makefile 同时支持 x86 开发调试与 ARM64 交叉编译部署，配合 NFS 挂载实现编译即运行，完整覆盖从开发到板上运行的嵌入式开发流程
+9. **路径无关设计**：通过 `/proc/self/exe` 获取程序根目录，配置文件和日志文件使用相对路径，程序可在任意工作目录下运行
 
 ---
 
@@ -413,4 +421,4 @@ make clean      # 删除编译产物和日志文件
 |------|------|---------|
 | V0.1 | - | 基础文件管理、目录管理、日志系统、线程池、INI 配置管理、路径管理 |
 | V0.2 | 2026.08 | 新增网络服务器模块（TCP Socket + 多客户端 + 线程池集成 + 客户端链表管理），支持运行时状态查询与优雅关闭 |
-| V0.3 | 2026.08 | 三模块架构替代 server.c：GPIO 模块（sysfs）、Protocol 模块（二进制帧协议）、Gateway 模块（TCP服务器+心跳+回调分发）；网关服务器管理界面（q/s/h/l/r）；集成项目线程池 |
+| V0.3 | 2026.08 | 三模块架构替代 server.c：GPIO 模块（sysfs）、Protocol 模块（二进制帧协议）、Gateway 模块（TCP服务器+心跳+回调分发）；网关服务器管理界面（q/s/h/l/r）；集成项目线程池；NFS 挂载部署流程 |
