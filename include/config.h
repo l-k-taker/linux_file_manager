@@ -7,6 +7,8 @@ typedef struct
 
     char log_path[128];
 
+    char json_path[128];
+
         /*
         thread pool
     */

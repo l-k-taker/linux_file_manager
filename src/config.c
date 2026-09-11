@@ -84,13 +84,21 @@ static int config_handler(
         */
         if(strcmp(name,"path")==0)
         {
-
             strncpy(
                 cfg->log_path,
                 value,
                 sizeof(cfg->log_path)-1
             );
 
+        }
+
+        if(strcmp(name,"json_path")==0)
+        {
+            strncpy(
+                cfg->json_path,
+                value,
+                sizeof(cfg->json_path)-1
+            );
         }
 
     }
@@ -145,7 +153,10 @@ void config_print()
         config.log_path
     );
 
-
+    #ifdef ENABLE_JSON_LOG
+    printf("JSON path       : %s\n", config.json_path);
+    #endif
+    
     printf(
         "Task number     : %d\n",
         config.task_num

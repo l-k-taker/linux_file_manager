@@ -1,4 +1,19 @@
+# ===== 编译产物 =====
 app/file_manager
-app/logs/
+app/file_manager_json
+app/file_manager_arm
 *.o
 
+# ===== 日志 =====
+app/logs/
+*.log
+
+# ===== 编辑器 =====
+.vscode/
+.idea/
+*.swp
+
+# ===== 运行状态 =====
+.last_offset
+.client_pids
+.supervisor_pid

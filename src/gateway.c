@@ -12,7 +12,7 @@
 #include "gateway.h"
 #include "protocol.h"
 #include "thread_pool.h"
-
+#include "log_json.h"
 /*
  * 网关通信模块实现
  *
@@ -82,6 +82,7 @@ static void *interactive_thread_func(void *arg);
 /* ==================== 公共接口 ==================== */
 
 GatewayCtx *gateway_init(uint16_t port) {
+    LOG_JSON_INIT();
     GatewayCtx *ctx = (GatewayCtx *)calloc(1, sizeof(GatewayCtx));
     if (!ctx) {
         perror("[GW] calloc");
@@ -297,6 +298,7 @@ void gateway_cleanup(GatewayCtx *ctx) {
     pthread_mutex_destroy(&ctx->devices_mutex);
     pthread_mutex_destroy(&ctx->handlers_mutex);
     free(ctx);
+    LOG_JSON_CLOSE();
 }
 
 int gateway_send_response(GatewayCtx *ctx, int dev_fd, uint8_t cmd, uint8_t flags,

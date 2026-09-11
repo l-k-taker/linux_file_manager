@@ -14,6 +14,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include "log_json.h"
 
 extern Config config;
 #include <time.h>
@@ -30,6 +31,7 @@ static void handle_sensor_data(const GatewayDevice *dev,
                                const uint8_t *payload, uint16_t payload_len,
                                void *user_data) {
     printf("\n[SENSOR] Data from %s:%d (dev_id=%s)\n", dev->ip, dev->port, dev->dev_id);
+    LOG_EVENT("sensor_data", dev->ip, dev->fd, "sensor data received");
     if (payload_len > 0) {
         printf("  Payload (%d bytes): ", payload_len);
         for (int i = 0; i < payload_len && i < 16; i++) {
@@ -48,6 +50,7 @@ static void handle_register(const GatewayDevice *dev,
                             const uint8_t *payload, uint16_t payload_len,
                             void *user_data) {
     printf("\n[REGISTER] Request from %s:%d\n", dev->ip, dev->port);
+    LOG_EVENT("device_register", dev->ip, dev->fd, "register request");
     if (payload_len > 0 && payload_len < sizeof(dev->dev_id)) {
         memcpy((char*)dev->dev_id, payload, payload_len);
         ((char*)dev->dev_id)[payload_len] = '\0';
@@ -74,6 +77,7 @@ static void handle_gpio_control(const GatewayDevice *dev,
                                 const uint8_t *payload, uint16_t payload_len,
                                 void *user_data) {
     printf("\n[GPIO] Control command from %s\n", dev->ip);
+    LOG_EVENT("gpio_control", dev->ip, dev->fd, "gpio control command");
     if (payload_len >= 2) {
         printf("  Pin: %d, Value: %d\n", payload[0], payload[1]);
     }
